@@ -1,0 +1,40 @@
+name: Process Dataset via HTTP Trigger
+
+on:
+  repository_dispatch:
+    types: [process-dataset]
+
+jobs:
+  process-dataset:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repository
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      # Step 3: Install dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openai supabase PyPDF2 numpy requests  openpyxl
+
+
+      - name: Log Payload
+        run: echo '${{ toJson(github.event.client_payload) }}'
+      # Step 4: Process the dataset
+      - name: Process Dataset
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SERVICE_ROLE: ${{ secrets.SERVICE_ROLE }}         
+        run: |
+             echo '${{ toJson(github.event.client_payload) }}'
+             echo "${{ toJson(github.event.client_payload) }}" > payload.json
+             python scripts/process_dataset.py payload.json

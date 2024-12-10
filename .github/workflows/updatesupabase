@@ -1,0 +1,53 @@
+name: Monitor Repository Updates
+
+on:
+  push:
+    paths:
+      - '**' # Monitor all folders within the repository
+  workflow_dispatch:
+
+jobs:
+  notify_endpoint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set Up HTTP Client
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq curl
+
+    - name: Get Commit and File Details
+      id: commit_info
+      run: |
+        # Extract commit information
+        COMMIT_MSG=$(jq -r '.head_commit.message' $GITHUB_EVENT_PATH)
+        COMMIT_AUTHOR=$(jq -r '.head_commit.committer.name' $GITHUB_EVENT_PATH)
+        COMMIT_URL=$(jq -r '.head_commit.url' $GITHUB_EVENT_PATH)
+
+        # Extract file details (name, size, and GitHub URL)
+        FILE_DETAILS=$(jq -r '.commits[] | .added[], .modified[], .removed[]' $GITHUB_EVENT_PATH | while read FILE; do
+          FILE_SIZE=$(stat -c%s "$FILE" 2>/dev/null || echo "0")
+          FILE_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/$FILE"
+          echo "{\"name\": \"$FILE\", \"size\": $FILE_SIZE, \"url\": \"$FILE_URL\"}"
+        done | jq -s .)
+
+        echo "::set-output name=message::$COMMIT_MSG"
+        echo "::set-output name=author::$COMMIT_AUTHOR"
+        echo "::set-output name=url::$COMMIT_URL"
+        echo "::set-output name=files::$FILE_DETAILS"
+
+    - name: Send POST Request to Endpoint
+      env:
+        WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }} # Store the endpoint URL in GitHub Secrets
+      run: |
+        curl -X POST $WEBHOOK_URL \
+          -H "Content-Type: application/json" \
+          -d '{
+            "commit_message": "${{ steps.commit_info.outputs.message }}",
+            "commit_author": "${{ steps.commit_info.outputs.author }}",
+            "commit_url": "${{ steps.commit_info.outputs.url }}",
+            "files_changed": ${{ steps.commit_info.outputs.files }}
+          }'
